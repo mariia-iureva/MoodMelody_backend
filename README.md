@@ -132,5 +132,3 @@ The application should now be running at `http://127.0.0.1:5000/`.
 
 This project is licensed under the MIT License.
 ```
-
-This should provide a complete guide for setting up and running the `mood_melody_backend` project.
