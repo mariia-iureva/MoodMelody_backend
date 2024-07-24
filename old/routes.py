@@ -106,34 +106,34 @@ def get_recommendation():
 
 
 
-    # # Create input message for OpenAI
-    # input_message = f"Please recommend one song based on the following description: {data['description']}. Provide the recommendation in the format 'Song Title by Artist'."
+    # Create input message for OpenAI
+    input_message = f"Please recommend one song based on the following description: {data['description']}. Provide the recommendation in the format 'Song Title by Artist'."
 
-    # try:
-    #     # Send request to OpenAI API
-    #     response = client.chat.completions.create(
-    #         model="gpt-4o-mini",
-    #         messages=[
-    #             {"role": "system", "content": "You are a music recommendation assistant."},
-    #             {"role": "user", "content": input_message}
-    #         ],
-    #         max_tokens=150
-    #     )
+    try:
+        # Send request to OpenAI API
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a music recommendation assistant."},
+                {"role": "user", "content": input_message}
+            ],
+            max_tokens=150
+        )
 
-    #     # Extract song recommendation from response
-    #     song_recommendation = response.choices[0].message.content.strip()
-    #     print("Song Recommendation from OpenAI:", song_recommendation)
-    #     song_title, song_artist = song_recommendation.split(' by ')
+        # Extract song recommendation from response
+        song_recommendation = response.choices[0].message.content.strip()
+        print("Song Recommendation from OpenAI:", song_recommendation)
+        song_title, song_artist = song_recommendation.split(' by ')
 
-    #     # Search for the track on Spotify
-    #     track_link = search_spotify_track(song_title, song_artist, access_token)
-    #     if not track_link:
-    #         return jsonify({"error": "Song not found on Spotify"}), 404
+        # Search for the track on Spotify
+        track_link = search_spotify_track(song_title, song_artist, access_token)
+        if not track_link:
+            return jsonify({"error": "Song not found on Spotify"}), 404
 
-    #     return jsonify({'response': song_recommendation, 'spotify_link': track_link})
-    # except Exception as e:
-    #     print("Error:", str(e))
-    #     return jsonify({"error": str(e)}), 500
+        return jsonify({'response': song_recommendation, 'spotify_link': track_link})
+    except Exception as e:
+        print("Error:", str(e))
+        return jsonify({"error": str(e)}), 500
 
 @bp.route('/check_session', methods=['GET'])
 def check_session():

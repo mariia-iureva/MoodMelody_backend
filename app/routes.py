@@ -27,21 +27,26 @@ def get_recommendation():
     user_text = data['description']
     print("User Text:", user_text)
     
+    # Placeholder response for all requests
+    song_recommendation = "'Happy' by Pharrell Williams."
+    
+    # Commented out OpenAI logic
     # Create the input message for OpenAI
-    input_message = f"Please recommend one song based on the following description: {user_text}. Provide the recommendation in the format 'Song Title by Artist'."
+    # input_message = f"Please recommend one song based on the following description: {user_text}. Provide the recommendation in the format 'Song Title by Artist'."
     
     # Send request to OpenAI API
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a music recommendation assistant."},
-            {"role": "user", "content": input_message}
-        ],
-        max_tokens=50
-    )
+    # response = client.chat.completions.create(
+    #     model="gpt-4o-mini",
+    #     messages=[
+    #         {"role": "system", "content": "You are a music recommendation assistant."},
+    #         {"role": "user", "content": input_message}
+    #     ],
+    #     max_tokens=50
+    # )
     
     # Extract song recommendation from response
-    song_recommendation = response.choices[0].message.content.strip()
+    # song_recommendation = response.choices[0].message.content.strip()
+    
     print("OpenAI Response:", song_recommendation)
     
     return jsonify({"message": "Received the text", "description": user_text, "recommendation": song_recommendation})
@@ -64,9 +69,15 @@ def get_spotify_link():
         "limit": 1
     }
     search_response = requests.get(search_url, headers=search_headers, params=search_params)
+
+    if search_response.status_code == 401:
+        # If unauthorized, redirect to login
+        auth_url = url_for('main.login', _external=True)
+        return jsonify({"redirect_url": auth_url})
+
     search_results = search_response.json()
 
-    if not search_results['tracks']['items']:
+    if 'tracks' not in search_results or not search_results['tracks']['items']:
         return jsonify({"error": "No tracks found on Spotify"}), 404
 
     track_id = search_results['tracks']['items'][0]['id']
