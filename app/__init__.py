@@ -1,19 +1,31 @@
-# app/__init__.py
-
 import os
-from flask import Flask, request, g
-from .routes.songs_routes import bp
+from flask import Flask
+from flask_cors import CORS
+import redis
+from .routes import bp as main_bp
 from .db import db, migrate
-from .models import User, OpenAIResponse  # Ensure models are imported
 import openai
 from dotenv import load_dotenv
-import uuid
 
 # Load environment variables from .env file
 load_dotenv()
 
 def create_app(test_config=None):
     app = Flask(__name__)
+    CORS(app)  # Enable CORS for all routes
+
+    # Ensure FLASK_SECRET_KEY is set in the .env file
+    app.secret_key = os.getenv('FLASK_SECRET_KEY')
+    if not app.secret_key:
+        raise ValueError("No secret key set for Flask application. Please set FLASK_SECRET_KEY in the .env file.")
+
+    # Configure session
+    # redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+    # app.config['SESSION_TYPE'] = 'redis'
+    # app.config['SESSION_PERMANENT'] = False
+    # app.config['SESSION_USE_SIGNER'] = True  # To sign the session cookies
+    # app.config['SESSION_REDIS'] = redis.from_url(redis_url)
+    # # Session(app)
 
     # Determine which database to use
     if test_config:
@@ -29,21 +41,9 @@ def create_app(test_config=None):
     migrate.init_app(app, db)
 
     # Set OpenAI API key from environment variable
+    openai.api_key = os.getenv('OPENAI_API_KEY')
 
-    # Middleware to generate session ID
-    @app.before_request
-    def ensure_session_id():
-        session_id = request.headers.get('Session-Id')
-        if not session_id:
-            session_id = str(uuid.uuid4())
-            g.session_id = session_id
-            user = User(session_id=session_id)
-            db.session.add(user)
-            db.session.commit()
-        else:
-            g.session_id = session_id
-
-    # Register the blueprint
-    app.register_blueprint(bp)
+    # Register blueprints
+    app.register_blueprint(main_bp)
 
     return app

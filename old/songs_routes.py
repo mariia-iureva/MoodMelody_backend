@@ -8,59 +8,96 @@
 
 # app/routes/songs_routes.py
 # app/routes/songs_routes.py
+# app/routes/songs_routes.py
+# app/routes/songs_routes.py
 
-from flask import Blueprint, request, jsonify, g
-from ..db import db
-from ..models.openai_response import OpenAIResponse
-from openai import OpenAI
+# app/routes/songs_routes.py
+# app/routes/songs_routes.py
+# app/routes/songs_routes.py
+# app/routes/songs_routes.py
+# app/routes/songs_routes.py
+
+from flask import Blueprint, request, jsonify, session, redirect, url_for
 import os
-
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+import requests
+from openai import OpenAI
+import openai
 
 bp = Blueprint('songs', __name__)
 
-# Load OpenAI API key from environment variable
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
-@bp.route('/songs', methods=['GET'])
-def get_songs():
-    # Example route
-    return jsonify({"message": "Songs route"})
+def search_spotify_track(track_title, track_artist, access_token):
+    search_url = "https://api.spotify.com/v1/search"
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+    params = {
+        "q": f"track:{track_title} artist:{track_artist}",
+        "type": "track",
+        "limit": 1
+    }
+
+    response = requests.get(search_url, headers=headers, params=params)
+    response_json = response.json()
+    if response_json['tracks']['items']:
+        return response_json['tracks']['items'][0]['external_urls']['spotify']
+    return None
 
 @bp.route('/recommendations', methods=['POST'])
 def get_recommendation():
+    session_id = session.get('session_id')
+    print("Session ID:", session_id)
+    if not session_id:
+        print("Session ID is missing. Redirecting to login.")
+        return redirect(url_for('auth.login'))  # Redirect to login if session ID is missing
+
+    # Retrieve the token from the session
+    access_token = session.get('access_token')
+    if not access_token:
+        print("Spotify access token is missing")
+        return jsonify({"error": "Spotify access token is missing"}), 401
+
     data = request.json
-    session_id = g.session_id  # Use session ID from middleware
 
     # Create input message for OpenAI
     input_message = f"Please recommend one song based on the following description: {data['description']}. Provide the recommendation in the format 'Song Title by Artist'."
 
     try:
         # Send request to OpenAI API
-        response = client.chat.completions.create(model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a music recommendation assistant."},
-            {"role": "user", "content": input_message}
-        ],
-        max_tokens=150)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a music recommendation assistant."},
+                {"role": "user", "content": input_message}
+            ],
+            max_tokens=150
+        )
 
         # Extract song recommendation from response
         song_recommendation = response.choices[0].message.content.strip()
+        print("Song Recommendation from OpenAI:", song_recommendation)
+        song_title, song_artist = song_recommendation.split(' by ')
 
-        # Comment out the database session part for testing
-        # openai_response = OpenAIResponse(
-        #     request_text=data['description'],
-        #     response_text=song_recommendation,
-        #     songs=[{"title": song_recommendation}],
-        #     session_id=session_id
-        # )
-        # db.session.add(openai_response)
-        # db.session.commit()
+        # Search for the track on Spotify
+        track_link = search_spotify_track(song_title, song_artist, access_token)
+        if not track_link:
+            return jsonify({"error": "Song not found on Spotify"}), 404
 
-        return jsonify({'response': song_recommendation, 'songs': [{"title": song_recommendation}]})
+        return jsonify({'response': song_recommendation, 'spotify_link': track_link})
     except Exception as e:
+        print("Error:", str(e))
         return jsonify({"error": str(e)}), 500
 
-
+@bp.route('/check_session', methods=['GET'])
+def check_session():
+    session_id = session.get('session_id')
+    access_token = session.get('access_token')
+    return jsonify({
+        "session_id": session_id,
+        "access_token": access_token
+    })
 
 # bp = Blueprint("characters", __name__, url_prefix="/characters")
 # # openai.api_key = app.config['OPENAI_API_KEY']
