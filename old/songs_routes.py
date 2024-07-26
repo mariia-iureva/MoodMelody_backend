@@ -1,21 +1,10 @@
 # from flask import Blueprint, jsonify, request, abort, make_response
-# from ..db import db
+from ..db import db
 # from ..models.user import User
 # from ..models.openai_response import OpenAIResponse
 # from sqlalchemy import func, union, except_
 # import openai
 # from openai import OpenAI
-
-# app/routes/songs_routes.py
-# app/routes/songs_routes.py
-# app/routes/songs_routes.py
-# app/routes/songs_routes.py
-
-# app/routes/songs_routes.py
-# app/routes/songs_routes.py
-# app/routes/songs_routes.py
-# app/routes/songs_routes.py
-# app/routes/songs_routes.py
 
 from flask import Blueprint, request, jsonify, session, redirect, url_for
 import os

@@ -6,9 +6,12 @@ from .routes import bp as main_bp
 from .db import db, migrate
 import openai
 from dotenv import load_dotenv
+from flask_sqlalchemy import SQLAlchemy
 
 # Load environment variables from .env file
 load_dotenv()
+# db = SQLAlchemy()
+# migrate = Migrate()
 
 def create_app(test_config=None):
     app = Flask(__name__)
@@ -18,14 +21,6 @@ def create_app(test_config=None):
     app.secret_key = os.getenv('FLASK_SECRET_KEY')
     if not app.secret_key:
         raise ValueError("No secret key set for Flask application. Please set FLASK_SECRET_KEY in the .env file.")
-
-    # Configure session
-    # redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-    # app.config['SESSION_TYPE'] = 'redis'
-    # app.config['SESSION_PERMANENT'] = False
-    # app.config['SESSION_USE_SIGNER'] = True  # To sign the session cookies
-    # app.config['SESSION_REDIS'] = redis.from_url(redis_url)
-    # # Session(app)
 
     # Determine which database to use
     if test_config:
