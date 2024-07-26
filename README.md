@@ -68,12 +68,9 @@ pip install -r requirements.txt
 2. **Create the development and test databases**:
 
 ```sh
-psql
-CREATE DATABASE mood_melody_dev;
-CREATE DATABASE mood_melody_test;
-CREATE USER m_user WITH PASSWORD 'password';
-GRANT ALL PRIVILEGES ON DATABASE mood_melody_dev TO m_user;
-GRANT ALL PRIVILEGES ON DATABASE mood_melody_test TO m_user;
+psql -U postgres - #To open the Postgres interactive terminal with a Postgres user named postgres
+CREATE DATABASE mood_m;
+CREATE DATABASE mood_m_test;
 \q
 ```
 
@@ -82,8 +79,8 @@ GRANT ALL PRIVILEGES ON DATABASE mood_melody_test TO m_user;
 1. **Create a `.env` file** in the root directory with the following content:
 
 ```plaintext
-SQLALCHEMY_DATABASE_URI=postgresql://m_user:password@localhost/mood_melody_dev
-SQLALCHEMY_TEST_DATABASE_URI=postgresql://m_user:password@localhost/mood_melody_test
+SQLALCHEMY_DATABASE_URI=postgresql://postgres:password@localhost/mood_m
+SQLALCHEMY_TEST_DATABASE_URI=postgresql://postgres:password@localhost/mood_m_test
 OPENAI_API_KEY=your_openai_api_key
 SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
@@ -108,7 +105,7 @@ flask db upgrade
 flask run
 ```
 
-The application should now be running at `http://127.0.0.1:5000/`.
+The application should now be running at `http://127.0.0.1:5000/` or `http://localhost:5000/`
 
 ## Checking the Application with Postman
 
@@ -116,7 +113,7 @@ The application should now be running at `http://127.0.0.1:5000/`.
 
 2. **Create a new POST request**:
 
-- **URL**: `http://127.0.0.1:5000/recommendations`
+- **URL**: `http://127.0.0.1:5000/recommend` or `http://localhost:5000/recommend`
 - **Headers**: Add a `Session-Id` header with a unique value (optional).
 - **Body**: Set to JSON and include a `description` field, for example:
 
