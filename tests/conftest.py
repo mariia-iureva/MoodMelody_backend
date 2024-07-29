@@ -3,7 +3,9 @@ import os
 from dotenv import load_dotenv
 import pytest
 from app import create_app
-
+import requests
+from unittest.mock import patch
+from app import db
 
 # Load environment variables from .env file
 load_dotenv()
@@ -18,8 +20,18 @@ def client():
     app = create_app(test_config)
     
     with app.test_client() as client:
-        with app.app_context():
-            yield client
+            with app.app_context():
+                # Create tables
+                db.create_all()
+                yield client
+                # Drop tables
+                db.drop_all()
+
+@pytest.fixture(autouse=True)
+def cleanup():
+    yield
+    db.session.rollback()
+    db.session.remove()
 
 @pytest.fixture
 def mock_openai(monkeypatch):
@@ -65,3 +77,34 @@ def mock_openai(monkeypatch):
             return MockChat()
 
     monkeypatch.setattr('app.routes.get_openai_client', lambda: MockOpenAIClient())
+
+@pytest.fixture
+def mock_spotify(monkeypatch):
+    # Mock get_spotify_user_id
+    def mock_get_spotify_user_id(access_token):
+        return 'mock_user_id'
+    monkeypatch.setattr('app.routes.get_spotify_user_id', mock_get_spotify_user_id)
+
+    # Mock requests.get
+    def mock_requests_get(url, headers):
+        class MockResponse:
+            def json(self):
+                return {
+                    'tracks': {
+                        'items': [
+                            {'uri': 'spotify:track:mock_uri'}
+                        ]
+                    }
+                }
+        return MockResponse()
+    monkeypatch.setattr(requests, 'get', mock_requests_get)
+
+    # Mock requests.post
+    def mock_requests_post(url, json, headers):
+        class MockResponse:
+            def json(self):
+                if 'playlists' in url:
+                    return {'id': 'mock_playlist_id'}
+                return {}
+        return MockResponse()
+    monkeypatch.setattr(requests, 'post', mock_requests_post)

@@ -254,8 +254,10 @@ def callback():
     # session['refresh_token'] = response_data['refresh_token']
 
     session_id = request.cookies.get('session_id')
+    print("Session ID from Cookie:", session_id)
     if not session_id:
         session_id = get_session_id()
+    print("Final Session ID:", session_id)
     token_info = {
         'access_token': response_data['access_token'],
         'refresh_token': response_data['refresh_token']
@@ -270,41 +272,3 @@ def callback():
 
     react_app_url = f"http://localhost:3000?session_id={session_id}"
     return redirect(react_app_url)
-    
-
-    # return jsonify({"message": "Authorization successful! You can now use Spotify API."})
-
-
-# @bp.route('/spotify_link', methods=['POST'])
-# def get_spotify_link():
-#     data = request.json
-#     song_recommendation = data.get('recommendation')
-#     if not song_recommendation:
-#         return jsonify({"error": "No song recommendation found"}), 400
-
-#     # Search for the song on Spotify
-#     search_url = "https://api.spotify.com/v1/search"
-#     search_headers = {
-#         "Authorization": f"Bearer {SPOTIFY_ACCESS_TOKEN}"
-#     }
-#     search_params = {
-#         "q": song_recommendation,
-#         "type": "track",
-#         "limit": 1
-#     }
-#     search_response = requests.get(search_url, headers=search_headers, params=search_params)
-
-#     if search_response.status_code == 401:
-#         # If unauthorized, redirect to login
-#         auth_url = url_for('main.login', _external=True)
-#         return jsonify({"redirect_url": auth_url})
-
-#     search_results = search_response.json()
-
-#     if 'tracks' not in search_results or not search_results['tracks']['items']:
-#         return jsonify({"error": "No tracks found on Spotify"}), 404
-
-#     track_id = search_results['tracks']['items'][0]['id']
-#     track_link = search_results['tracks']['items'][0]['external_urls']['spotify']
-    
-#     return jsonify({"spotify_link": track_link})
