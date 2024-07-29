@@ -21,26 +21,23 @@ def create_app(test_config=None):
     if not app.secret_key:
         raise ValueError("No secret key set for Flask application. Please set FLASK_SECRET_KEY in the .env file.")
 
-    # Determine which database to use
-    # if test_config:
-    #     db_to_use = os.environ.get("SQLALCHEMY_TEST_DATABASE_URI")
-    # else:
-    #     db_to_use = os.environ.get("SQLALCHEMY_DATABASE_URI")
     if test_config:
+        # Use the test configuration if provided
         app.config.update(test_config)
     else:
-        app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
+        # Use the DATABASE_URL from Heroku if it exists, otherwise fall back to local SQLALCHEMY_DATABASE_URI
+        app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL') or os.getenv('SQLALCHEMY_DATABASE_URI')
         app.config['OPENAI_API_KEY'] = os.getenv('OPENAI_API_KEY')
-
-    # app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    # app.config['SQLALCHEMY_DATABASE_URI'] = db_to_use
+    
+    # Set common configuration options
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     # Initialize the database and migration
     db.init_app(app)
     migrate.init_app(app, db)
 
     # Set OpenAI API key from environment variable or test config
-    app.config['OPENAI_API_KEY'] = test_config.get('OPENAI_API_KEY', os.getenv('OPENAI_API_KEY')) if test_config else os.getenv('OPENAI_API_KEY')
+    # app.config['OPENAI_API_KEY'] = test_config.get('OPENAI_API_KEY', os.getenv('OPENAI_API_KEY')) if test_config else os.getenv('OPENAI_API_KEY')
 
 
     # Set OpenAI API key from environment variable
