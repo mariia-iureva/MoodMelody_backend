@@ -1,7 +1,6 @@
 import os
 from flask import Flask
 from flask_cors import CORS
-import redis
 from .routes import bp as main_bp
 from .db import db, migrate
 import openai
@@ -23,20 +22,29 @@ def create_app(test_config=None):
         raise ValueError("No secret key set for Flask application. Please set FLASK_SECRET_KEY in the .env file.")
 
     # Determine which database to use
+    # if test_config:
+    #     db_to_use = os.environ.get("SQLALCHEMY_TEST_DATABASE_URI")
+    # else:
+    #     db_to_use = os.environ.get("SQLALCHEMY_DATABASE_URI")
     if test_config:
-        db_to_use = os.environ.get("SQLALCHEMY_TEST_DATABASE_URI")
+        app.config.update(test_config)
     else:
-        db_to_use = os.environ.get("SQLALCHEMY_DATABASE_URI")
+        app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
+        app.config['OPENAI_API_KEY'] = os.getenv('OPENAI_API_KEY')
 
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_to_use
+    # app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # app.config['SQLALCHEMY_DATABASE_URI'] = db_to_use
 
     # Initialize the database and migration
     db.init_app(app)
     migrate.init_app(app, db)
 
+    # Set OpenAI API key from environment variable or test config
+    app.config['OPENAI_API_KEY'] = test_config.get('OPENAI_API_KEY', os.getenv('OPENAI_API_KEY')) if test_config else os.getenv('OPENAI_API_KEY')
+
+
     # Set OpenAI API key from environment variable
-    openai.api_key = os.getenv('OPENAI_API_KEY')
+    # openai.api_key = os.getenv('OPENAI_API_KEY')
 
     # Register blueprints
     app.register_blueprint(main_bp)

@@ -7,12 +7,17 @@ import base64
 from app.models.user import User
 from .db import db
 import uuid
+from flask import current_app
+
 
 bp = Blueprint('main', __name__)
 CORS(bp)  # Enable CORS for the blueprint
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+def get_openai_client():
+    return OpenAI(api_key=current_app.config['OPENAI_API_KEY'])
 
 # Spotify credentials (replace with your client ID and client secret)
 SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
@@ -64,6 +69,7 @@ def openai_recommendation(user_text):
     # Create the input message for OpenAI
     input_message = f"Please recommend 3 songs based on the description: {user_text}. Provide the recommendation strictly in the format of a dictionary with keys 'Playlist name' and 'Songs'. The value for 'playlist name' should be a short name based on the user description prefixed with 'MM', and the 'songs' should be an array of 3 song titles and artists in the format ['Song1 by Artist1', 'Song2 by Artist2', 'Song3 by Artist3']. No formatting is needed, don't forget the closing bracket for the array."
 
+    client = get_openai_client()
     
     # Send request to OpenAI API
     response = client.chat.completions.create(
@@ -74,6 +80,9 @@ def openai_recommendation(user_text):
         ],
         max_tokens=50
     )
+
+    # Print the raw response for debugging
+    print("OpenAI Raw Response:", response)
 
     # Extract song recommendation from response
     song_recommendation = response.choices[0].message.content.strip()
@@ -192,8 +201,8 @@ def recommend():
     print("User Text:", user_text)
     
     # Get song recommendations and playlist name from OpenAI
-    # recommendation_dict = openai_recommendation(user_text)
-    recommendation_dict = {'Playlist name': 'MMHappiness', 'Songs': ['Happy by Pharrell Williams', 'Walking on Sunshine by Katrina and the Waves', 'Good Vibrations by The Beach Boys']}
+    recommendation_dict = openai_recommendation(user_text)
+    # recommendation_dict = {'Playlist name': 'MMHappiness', 'Songs': ['Happy by Pharrell Williams', 'Walking on Sunshine by Katrina and the Waves', 'Good Vibrations by The Beach Boys']}
     # Create Spotify playlist
     spotify_link = spotify_playlist(recommendation_dict, session_id)
     print("Spotify Link:", spotify_link)
