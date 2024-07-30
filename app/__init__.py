@@ -26,7 +26,10 @@ def create_app(test_config=None):
         app.config.update(test_config)
     else:
         # Use the DATABASE_URL from Heroku if it exists, otherwise fall back to local SQLALCHEMY_DATABASE_URI
-        app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL') or os.getenv('SQLALCHEMY_DATABASE_URI')
+        database_url = os.getenv('DATABASE_URL')
+        if database_url and database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url or os.getenv('SQLALCHEMY_DATABASE_URI')
         app.config['OPENAI_API_KEY'] = os.getenv('OPENAI_API_KEY')
     
     # Set common configuration options
