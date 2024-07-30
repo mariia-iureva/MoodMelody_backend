@@ -166,6 +166,9 @@ def spotify_playlist(recommendation_dict, session_id):
     return f"https://open.spotify.com/playlist/{playlist_id}"
 
 
+@bp.route('/')
+def welcome():
+    return "Welcome to the Mood Melody Backend!"
 
 @bp.route('/check_openai', methods=['POST'])
 def check_openai():
