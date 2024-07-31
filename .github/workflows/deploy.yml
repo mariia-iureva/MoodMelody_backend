@@ -21,6 +21,7 @@ jobs:
     - name: Run tests
       env:
         OPENAI_API_KEY: ${{ secrets.TEST_OPENAI_API_KEY }}
+        FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
       run: pytest
 
   deploy:
