@@ -1,6 +1,7 @@
 alembic==1.13.1
 annotated-types==0.6.0
 anyio==4.3.0
+black==24.4.2
 blinker==1.7.0
 cachelib==0.13.0
 certifi==2024.2.2
@@ -25,8 +26,11 @@ Jinja2==3.1.3
 Mako==1.3.2
 MarkupSafe==2.1.5
 msgspec==0.18.6
+mypy-extensions==1.0.0
 openai==1.35.2
 packaging==23.2
+pathspec==0.12.1
+platformdirs==4.2.2
 pluggy==1.4.0
 psycopg2-binary==2.9.9
 pydantic==2.7.1
