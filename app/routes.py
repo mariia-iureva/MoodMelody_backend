@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, redirect, session, url_for, make_response
+from flask import Blueprint, request, jsonify, redirect, session, url_for, make_response, current_app
 import os
 from openai import OpenAI
 from flask_cors import CORS
@@ -7,8 +7,14 @@ import base64
 from app.models.user import User
 from .db import db
 import uuid
-from flask import current_app
+import logging
+import ast
+import re
+import json
 
+# Set up logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("main", __name__)
 CORS(bp)  # Enable CORS for the blueprint
@@ -65,43 +71,68 @@ def retrieve_tokens_from_db(session_id):
         return {"access_token": user.access_token, "refresh_token": user.refresh_token}
     return None
 
+def format_openai_response(response_string):
+    """
+    Formats the OpenAI response string to ensure it is a valid dictionary format.
+    """
+    try:
+        # Remove any unwanted characters or patterns
+        # Example: Remove everything before the first '{' and after the last '}'
+        response_string = re.search(r'\{.*\}', response_string).group(0)
+
+        # Try to parse as JSON first (safer than ast.literal_eval)
+        try:
+            recommendation_dict = json.loads(response_string)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, fall back to ast.literal_eval
+            recommendation_dict = ast.literal_eval(response_string)
+
+        # Convert to a dictionary using ast.literal_eval for safety
+        return ast.literal_eval(response_string)
+    except Exception as e:
+        logger.error("Failed to format OpenAI response: %s", response_string)
+        logger.error("Error details: %s", str(e))
+        # Return a default dictionary or raise an error
+        raise ValueError("Could not parse the OpenAI response.")
 
 def openai_recommendation(user_text):
-    print("asking openAi to recommend some songs")
-    # Placeholder response for all requests
-    # song_recommendation = "'Happy' by Pharrell Williams."
+    try: 
+        print("asking openAi to recommend some songs")
+        # Placeholder response for all requests
+        # song_recommendation = "'Happy' by Pharrell Williams."
 
-    # Create the input message for OpenAI
-    input_message = f"Please recommend 3 songs based on the description: {user_text}. Provide the recommendation strictly in the format of a dictionary with keys 'Playlist name' and 'Songs'. The value for 'playlist name' should be a short name based on the user description prefixed with 'MM', and the 'songs' should be an array of 3 song titles and artists in the format ['Song1 by Artist1', 'Song2 by Artist2', 'Song3 by Artist3']. No formatting is needed, don't forget the closing bracket for the array."
+        # Create the input message for OpenAI
+        input_message = f"Please recommend 3 songs based on the description: {user_text}. Provide the recommendation strictly in the format of a dictionary with keys 'Playlist name' and 'Songs'. The value for 'playlist name' should be a short name based on the user description prefixed with 'MM', and the 'songs' should be an array of 3 song titles and artists in the format ['Song1 by Artist1', 'Song2 by Artist2', 'Song3 by Artist3']. No formatting is needed, don't forget the closing bracket for the array."
 
-    client = get_openai_client()
+        client = get_openai_client()
 
-    # Send request to OpenAI API
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a music recommendation assistant."},
-            {"role": "user", "content": input_message},
-        ],
-        max_tokens=50,
-    )
+        # Send request to OpenAI API
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a music recommendation assistant."},
+                {"role": "user", "content": input_message},
+            ],
+            max_tokens=50,
+        )
 
-    # Print the raw response for debugging
-    print("OpenAI Raw Response:", response)
+        # Extract song recommendation from response
+        song_recommendation = response.choices[0].message.content.strip()
 
-    # Extract song recommendation from response
-    song_recommendation = response.choices[0].message.content.strip()
+        # Format and parse the response
+        recommendation_dict = format_openai_response(song_recommendation)
 
-    # Convert the response string to a dictionary
-    recommendation_dict = eval(song_recommendation)
+        print("OpenAI Response:", recommendation_dict)
 
-    print("OpenAI Response:", recommendation_dict)
+        return recommendation_dict
 
-    return recommendation_dict
+    except ValueError as e:
+        logger.error("ValueError: %s", str(e))
+        return jsonify({"error": "Unable to parse the recommendation. Please try again later."}), 500
 
-    # print("OpenAI Response:", song_recommendation)
-
-    # return song_recommendation
+    except Exception as e:
+        logger.error("Unexpected error: %s", str(e))
+        return jsonify({"error": "An unexpected error occurred. Please try again later."}), 500
 
 
 def get_spotify_user_id(access_token):
