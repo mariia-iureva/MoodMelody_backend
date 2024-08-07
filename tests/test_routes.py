@@ -132,7 +132,7 @@ def test_callback_success(client):
             response = client.get("/auth/callback?code=mock_code")
             assert response.status_code == 302
             assert (
-                response.location == "http://localhost:3000?session_id=mock_session_id"
+                response.location == "http://localhost:3000/home?session_id=mock_session_id"
             )
 
             # Verify that tokens are stored in the database
@@ -165,7 +165,7 @@ def test_callback_no_session_id(client):
         # Extract the new session_id from the redirection URL
         new_session_id = response.location.split("session_id=")[-1]
         assert new_session_id != ""
-        assert response.location == f"http://localhost:3000?session_id={new_session_id}"
+        assert response.location == f"http://localhost:3000/home?session_id={new_session_id}"
 
         # Verify that tokens are stored in the database
         token_info = User.query.filter_by(session_id=new_session_id).first()
