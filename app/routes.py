@@ -11,10 +11,27 @@ import logging
 import ast
 import re
 import json
+from datetime import datetime
 
 # Set up logging
-logging.basicConfig(level=logging.ERROR)
-logger = logging.getLogger(__name__)
+# Create a directory for logs if it doesn't exist
+log_directory = "logging"
+if not os.path.exists(log_directory):
+    os.makedirs(log_directory)
+
+# Configure logging
+log_filename = datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.log'
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler(os.path.join(log_directory, log_filename)),
+        logging.StreamHandler()  # If you also want to output to the console
+    ]
+)
+
+logger = logging.getLogger()
 
 bp = Blueprint("main", __name__)
 CORS(bp)  # Enable CORS for the blueprint
@@ -76,25 +93,31 @@ def format_openai_response(response_string):
     Formats the OpenAI response string to ensure it is a valid dictionary format.
     """
     try:
+        # First, try to parse the entire string as JSON
+        try:
+            return json.loads(response_string)
+        except json.JSONDecodeError:
+            pass
+        # If that fails, try to extract JSON-like content
         # Remove any unwanted characters or patterns
         # Example: Remove everything before the first '{' and after the last '}'
-        response_string = re.search(r'\{.*\}', response_string).group(0)
+        match = re.search(r'\{.*\}', response_string, re.DOTALL)
+        if match:
+            json_string = match.group(0)
+            try:
+                return json.loads(json_string)
+            except json.JSONDecodeError:
+                return ast.literal_eval(json_string)
 
-        # Try to parse as JSON first (safer than ast.literal_eval)
-        try:
-            recommendation_dict = json.loads(response_string)
-        except json.JSONDecodeError:
-            # If JSON parsing fails, fall back to ast.literal_eval
-            recommendation_dict = ast.literal_eval(response_string)
+        # If all else fails, return the original string
+        logger.warning("Could not parse as JSON or dict, returning original string")
+        return response_string
 
-        # Convert to a dictionary using ast.literal_eval for safety
-        return ast.literal_eval(response_string)
     except Exception as e:
         logger.error("Failed to format OpenAI response: %s", response_string)
         logger.error("Error details: %s", str(e))
-        # Return a default dictionary or raise an error
         raise ValueError("Could not parse the OpenAI response.")
-
+    
 def openai_recommendation(user_text):
     try: 
         print("asking openAi to recommend some songs")
@@ -319,5 +342,5 @@ def callback():
     print("Access Token:", response_data["access_token"])
     print("Authorization successful! You can now use Spotify API.")
 
-    react_app_url = f"http://localhost:3000?session_id={session_id}"
+    react_app_url = f"http://localhost:3000/home?session_id={session_id}"
     return redirect(react_app_url)
