@@ -5,6 +5,7 @@ from flask_cors import CORS
 import requests
 import base64
 from app.models.user import User
+from app.models.search_history import SearchHistory
 from .db import db
 import uuid
 import logging
@@ -48,34 +49,21 @@ def get_openai_client():
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 SPOTIFY_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI")
-
-# Hardcoded Spotify access token (replace with actual token)
 SPOTIFY_ACCESS_TOKEN = os.getenv("SPOTIFY_ACCESS_TOKEN")
 
 # Helper functions
 
-# def get_session_id():
-#     print("I'm in session id")
-#     session_id = str(uuid.uuid4())
-#     # response = make_response(redirect(url_for('main.login', session_id=session_id)))
-#     response.set_cookie('session_id', session_id)
-#     return response
-
-
 def get_session_id():
     print("I'm in session id")
     session_id = str(uuid.uuid4())
-    # response = make_response(jsonify({"message": "Session ID created", "session_id": session_id}))
-    # response.set_cookie('session_id', session_id)
-    # return response
     return session_id
 
 
-def store_tokens_in_db(session_id, token_info):
+def store_tokens_in_db(session_id, token_info, spotify_user_id):
     access_token = token_info["access_token"]
     refresh_token = token_info["refresh_token"]
     user = User(
-        session_id=session_id, access_token=access_token, refresh_token=refresh_token
+        session_id=session_id, access_token=access_token, refresh_token=refresh_token, spotify_user_id=spotify_user_id
     )
     db.session.add(user)
     db.session.commit()
@@ -88,6 +76,22 @@ def retrieve_tokens_from_db(session_id):
         return {"access_token": user.access_token, "refresh_token": user.refresh_token}
     return None
 
+def save_search_history(spotify_user_id, search_query, spotify_link):
+    """
+    Save a search history entry to the database.
+    
+    :param spotify_user_id: Spotify user ID
+    :param search_query: The search query or playlist name
+    :param spotify_link: The Spotify playlist link
+    """
+    search_history_entry = SearchHistory(
+        spotify_user_id=spotify_user_id,
+        search_query=search_query,
+        spotify_link=spotify_link
+    )
+    db.session.add(search_history_entry)
+    db.session.commit()
+
 def format_openai_response(response_string):
     """
     Formats the OpenAI response string to ensure it is a valid dictionary format.
@@ -98,12 +102,29 @@ def format_openai_response(response_string):
             return json.loads(response_string)
         except json.JSONDecodeError:
             pass
+
         # If that fails, try to extract JSON-like content
-        # Remove any unwanted characters or patterns
-        # Example: Remove everything before the first '{' and after the last '}'
         match = re.search(r'\{.*\}', response_string, re.DOTALL)
         if match:
             json_string = match.group(0)
+            print("JSON String:", json_string)
+
+            # Count occurrences of opening and closing braces and brackets
+            open_braces = json_string.count('{')
+            close_braces = json_string.count('}')
+            open_brackets = json_string.count('[')
+            close_brackets = json_string.count(']')
+
+            print("Closing Braces:", close_braces)
+            print("Closing Brackets:", close_brackets)
+
+            # Add missing closing braces and brackets
+            if open_braces > close_braces:
+                json_string += '}' * (open_braces - close_braces)
+            if open_brackets > close_brackets:
+                json_string += ']' * (open_brackets - close_brackets)
+            print("JSON String with Closing Braces:", json_string)
+
             try:
                 return json.loads(json_string)
             except json.JSONDecodeError:
@@ -121,8 +142,6 @@ def format_openai_response(response_string):
 def openai_recommendation(user_text):
     try: 
         print("asking openAi to recommend some songs")
-        # Placeholder response for all requests
-        # song_recommendation = "'Happy' by Pharrell Williams."
 
         # Create the input message for OpenAI
         input_message = f"Please recommend 3 songs based on the description: {user_text}. Provide the recommendation strictly in the format of a dictionary with keys 'Playlist name' and 'Songs'. The value for 'playlist name' should be a short name based on the user description prefixed with 'MM', and the 'songs' should be an array of 3 song titles and artists in the format ['Song1 by Artist1', 'Song2 by Artist2', 'Song3 by Artist3']. No formatting is needed, don't forget the closing bracket for the array."
@@ -220,7 +239,9 @@ def spotify_playlist(recommendation_dict, session_id):
     add_tracks_body = {"uris": track_uris}
     requests.post(add_tracks_url, json=add_tracks_body, headers=headers)
 
-    return f"https://open.spotify.com/playlist/{playlist_id}"
+    spotify_link_result = f"https://open.spotify.com/playlist/{playlist_id}"
+
+    return user_id, spotify_link_result
 
 
 @bp.route("/")
@@ -272,20 +293,21 @@ def recommend():
 
     # Get song recommendations and playlist name from OpenAI
     recommendation_dict = openai_recommendation(user_text)
-    # recommendation_dict = {'Playlist name': 'MMHappiness', 'Songs': ['Happy by Pharrell Williams', 'Walking on Sunshine by Katrina and the Waves', 'Good Vibrations by The Beach Boys']}
-    # Create Spotify playlist
-    spotify_link = spotify_playlist(recommendation_dict, session_id)
+
+    # Create Spotify playlist and get user ID
+    user_id, spotify_link = spotify_playlist(recommendation_dict, session_id)
     print("Spotify Link:", spotify_link)
-    # spotify_link = "example.com"
-    # return jsonify({
-    #     "authorized": False
-    # })
+
+    # Save the search history using the helper function
+    if spotify_link and not isinstance(spotify_link, dict):  # Ensure spotify_link is not an error dictionary
+        save_search_history(user_id, user_text, spotify_link)
 
     return jsonify(
         {
             "authorized": True,
             "recommendation": recommendation_dict["Songs"],
             "spotify_link": spotify_link,
+            "user_id": user_id  # Return the user ID in the response
         }
     )
 
@@ -335,7 +357,9 @@ def callback():
         "access_token": response_data["access_token"],
         "refresh_token": response_data["refresh_token"],
     }
-    store_tokens_in_db(session_id, token_info)
+        # Get the Spotify user ID
+    spotify_user_id = get_spotify_user_id(token_info["access_token"])
+    store_tokens_in_db(session_id, token_info, spotify_user_id)
 
     # Redirect back to React app with session ID in URL
 
