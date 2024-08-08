@@ -70,10 +70,14 @@ def store_tokens_in_db(session_id, token_info, spotify_user_id):
     print(f"Successfully stored session ID {session_id} and token info")
 
 
-def retrieve_tokens_from_db(session_id):
+def retrieve_user_info_from_db(session_id):
     user = User.query.filter_by(session_id=session_id).first()
     if user:
-        return {"access_token": user.access_token, "refresh_token": user.refresh_token}
+        return {
+            "access_token": user.access_token,
+            "refresh_token": user.refresh_token,
+            "spotify_user_id": user.spotify_user_id,
+        }
     return None
 
 def save_search_history(spotify_user_id, search_query, spotify_link):
@@ -189,7 +193,7 @@ def spotify_playlist(recommendation_dict, session_id):
     # Uncomment the following line to use a hardcoded token for testing
     # access_token = SPOTIFY_ACCESS_TOKEN
 
-    token_info = retrieve_tokens_from_db(session_id)
+    token_info = retrieve_user_info_from_db(session_id)
     print("Token Info from Spotify Playlist:", token_info)
     if not token_info:
         return redirect(url_for("login", session_id=session_id))
@@ -274,7 +278,7 @@ def recommend():
             }
         )
 
-    token_info = retrieve_tokens_from_db(session_id)
+    token_info = retrieve_user_info_from_db(session_id)
     print("Token Info from recommend:", token_info)
     if not token_info:
         return jsonify(
@@ -368,3 +372,25 @@ def callback():
 
     react_app_url = f"http://localhost:3000/home?session_id={session_id}"
     return redirect(react_app_url)
+
+@bp.route("/history", methods=["GET"])
+def get_history():
+    session_id = request.args.get("session_id")
+    if not session_id:
+        session_id = request.cookies.get("session_id")
+
+    if not session_id:
+        return jsonify({"error": "No session ID found."}), 401
+
+    user_info = retrieve_user_info_from_db(session_id)
+    if not user_info:
+        return jsonify({"error": "User not authorized."}), 401
+
+    user_id = user_info["spotify_user_id"]
+    history = SearchHistory.query.filter_by(spotify_user_id=user_id).all()
+
+    return jsonify([{
+        "description": entry.search_query,
+        "spotifyLink": entry.spotify_link,
+        "timestamp": entry.timestamp.isoformat()
+    } for entry in history])
