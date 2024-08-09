@@ -391,10 +391,16 @@ def get_history():
         return jsonify({"error": "User not authorized."}), 401
 
     user_id = user_info["spotify_user_id"]
-    history = SearchHistory.query.filter_by(spotify_user_id=user_id).all()
+    history = (
+        SearchHistory.query.filter_by(spotify_user_id=user_id)
+        .order_by(SearchHistory.timestamp.desc())
+        .limit(10)  # Fetch the latest 10 records
+        .all()
+    )
 
     return jsonify([{
         "description": entry.search_query,
         "spotifyLink": entry.spotify_link,
         "timestamp": entry.timestamp.isoformat()
     } for entry in history])
+
