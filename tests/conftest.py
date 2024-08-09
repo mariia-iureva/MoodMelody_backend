@@ -89,10 +89,14 @@ def mock_openai(monkeypatch):
 
 
 @pytest.fixture
-def mock_spotify(monkeypatch):
+def mock_spotify_user_id():
+    return "mock_user_id"
+
+@pytest.fixture
+def mock_spotify(monkeypatch, mock_spotify_user_id):
     # Mock get_spotify_user_id
     def mock_get_spotify_user_id(access_token):
-        return "mock_user_id"
+        return mock_spotify_user_id
 
     monkeypatch.setattr("app.routes.get_spotify_user_id", mock_get_spotify_user_id)
 
