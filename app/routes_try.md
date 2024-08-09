@@ -319,7 +319,7 @@ def recommend():
             "recommendation": recommendation_dict["Songs"],
             "spotify_link": spotify_link,
             "playlist_id": playlist_id,
-            "user_id": user_id
+            "user_id": user_id  # Return the user ID in the response
         }
     )
 
@@ -405,14 +405,9 @@ def get_history():
     return jsonify([{
         "description": entry.search_query,
         "spotifyLink": entry.spotify_link,
-        "timestamp": entry.timestamp.isoformat()
+        "timestamp": entry.timestamp.isoformat(),
+        "playlistId": entry.spotify_link.split('/')[-1]
     } for entry in history])
-    # return jsonify([{
-    #     "description": entry.search_query,
-    #     "spotifyLink": entry.spotify_link,
-    #     "timestamp": entry.timestamp.isoformat(),
-    #     "playlistId": entry.spotify_link.split('/')[-1]
-    # } for entry in history])
 
 
 @bp.route("/playlist/<playlist_id>/tracks", methods=["GET"])
