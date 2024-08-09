@@ -14,6 +14,10 @@ import re
 import json
 from datetime import datetime
 
+
+# Use the environment variable to set the React app URL
+REACT_APP_URL = os.getenv("REACT_APP_URL")
+
 # Set up logging
 # Create a directory for logs if it doesn't exist
 log_directory = "logging"
@@ -370,7 +374,7 @@ def callback():
     print("Access Token:", response_data["access_token"])
     print("Authorization successful! You can now use Spotify API.")
 
-    react_app_url = f"http://localhost:3000/home?session_id={session_id}"
+    react_app_url = f"{REACT_APP_URL}/home?session_id={session_id}"
     return redirect(react_app_url)
 
 @bp.route("/history", methods=["GET"])
