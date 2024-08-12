@@ -18,6 +18,9 @@ from datetime import datetime
 # Use the environment variable to set the React app URL
 REACT_APP_URL = os.getenv("REACT_APP_URL")
 
+# Retries attempts for OpenAI to respond with correctly formatted response if we fail to parse it.
+MAX_RETRIES = 2
+
 # Set up logging
 # Create a directory for logs if it doesn't exist
 log_directory = "logging"
@@ -186,11 +189,33 @@ def openai_recommendation(user_text):
 
 
 def get_spotify_user_id(access_token):
-    user_profile_url = "https://api.spotify.com/v1/me"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.get(user_profile_url, headers=headers)
-    user_profile = response.json()
-    return user_profile["id"]
+    try:
+        user_profile_url = "https://api.spotify.com/v1/me"
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.get(user_profile_url, headers=headers)
+        
+        # Log and print the response status code and text for debugging
+        logger.info("User profile request response status: %s", response.status_code)
+        logger.info("User profile request response text: %s", response.text)
+
+        if response.status_code != 200:
+            logger.error("Failed to fetch user profile: %s", response.text)
+            raise ValueError("Could not retrieve user profile from Spotify.")
+
+        user_profile = response.json()
+        return user_profile["id"]
+    
+    except requests.exceptions.RequestException as e:
+        logger.error("RequestException in get_spotify_user_id: %s", str(e))
+        raise ValueError("Request to Spotify failed.")
+    
+    except KeyError as e:
+        logger.error("KeyError in get_spotify_user_id: %s", str(e))
+        raise ValueError("User ID not found in Spotify response.")
+    
+    except json.JSONDecodeError as e:
+        logger.error("JSONDecodeError in get_spotify_user_id: %s", str(e))
+        raise ValueError("Invalid JSON received from Spotify.")
 
 
 def spotify_playlist(recommendation_dict, session_id):
@@ -338,48 +363,73 @@ def login():
 
 @bp.route("/auth/callback", methods=["GET"])
 def callback():
-    code = request.args.get("code")
-    token_url = "https://accounts.spotify.com/api/token"
-    auth_str = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
-    b64_auth_str = base64.urlsafe_b64encode(auth_str.encode()).decode()
+    try:
+        code = request.args.get("code")
+        token_url = "https://accounts.spotify.com/api/token"
+        auth_str = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
+        b64_auth_str = base64.urlsafe_b64encode(auth_str.encode()).decode()
 
-    headers = {
-        "Authorization": f"Basic {b64_auth_str}",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
+        headers = {
+            "Authorization": f"Basic {b64_auth_str}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
 
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": SPOTIFY_REDIRECT_URI,
-    }
+        data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": SPOTIFY_REDIRECT_URI,
+        }
 
-    response = requests.post(token_url, headers=headers, data=data)
-    response_data = response.json()
+        response = requests.post(token_url, headers=headers, data=data)
+        
+        # Log and print the response status code and text for debugging
+        logger.info("Token request response status: %s", response.status_code)
+        logger.info("Token request response text: %s", response.text)
 
-    # session['access_token'] = response_data['access_token']
-    # session['refresh_token'] = response_data['refresh_token']
+        # Check for a successful response
+        if response.status_code != 200:
+            logger.error("Failed to get token: %s", response.text)
+            return jsonify({"error": "Failed to obtain access token from Spotify."}), 400
 
-    session_id = request.cookies.get("session_id")
-    print("Session ID from Cookie:", session_id)
-    if not session_id:
-        session_id = get_session_id()
-    print("Final Session ID:", session_id)
-    token_info = {
-        "access_token": response_data["access_token"],
-        "refresh_token": response_data["refresh_token"],
-    }
+        response_data = response.json()
+
+        session_id = request.cookies.get("session_id")
+        logger.info("Session ID from Cookie: %s", session_id)
+        if not session_id:
+            session_id = get_session_id()
+        logger.info("Final Session ID: %s", session_id)
+
+        token_info = {
+            "access_token": response_data["access_token"],
+            "refresh_token": response_data["refresh_token"],
+        }
+
         # Get the Spotify user ID
-    spotify_user_id = get_spotify_user_id(token_info["access_token"])
-    store_tokens_in_db(session_id, token_info, spotify_user_id)
+        spotify_user_id = get_spotify_user_id(token_info["access_token"])
+        store_tokens_in_db(session_id, token_info, spotify_user_id)
 
-    # Redirect back to React app with session ID in URL
+        # Redirect back to React app with session ID in URL
+        logger.info("Access Token: %s", response_data["access_token"])
+        logger.info("Authorization successful! You can now use Spotify API.")
 
-    print("Access Token:", response_data["access_token"])
-    print("Authorization successful! You can now use Spotify API.")
+        react_app_url = f"{REACT_APP_URL}/home?session_id={session_id}"
+        return redirect(react_app_url)
 
-    react_app_url = f"{REACT_APP_URL}/home?session_id={session_id}"
-    return redirect(react_app_url)
+    except requests.exceptions.RequestException as e:
+        logger.error("RequestException: %s", str(e))
+        return jsonify({"error": "Request to Spotify failed. Please try again later."}), 500
+
+    except KeyError as e:
+        logger.error("KeyError: Missing expected data in response. Details: %s", str(e))
+        return jsonify({"error": "Unexpected response format from Spotify."}), 500
+
+    except json.JSONDecodeError as e:
+        logger.error("JSONDecodeError: Failed to parse JSON. Details: %s", str(e))
+        return jsonify({"error": "Received invalid JSON response from Spotify."}), 500
+
+    except Exception as e:
+        logger.error("Unexpected error: %s", str(e))
+        return jsonify({"error": "An unexpected error occurred during authentication."}), 500
 
 @bp.route("/history", methods=["GET"])
 def get_history():
@@ -440,6 +490,7 @@ def get_playlist_tracks(playlist_id):
     tracks_data = response.json()
     simplified_tracks = [
         {
+            "id": item["track"]["id"],
             "name": item["track"]["name"],
             "artist": item["track"]["artists"][0]["name"],
             "album": item["track"]["album"]["name"],
@@ -451,3 +502,15 @@ def get_playlist_tracks(playlist_id):
 
     return jsonify({"items": simplified_tracks})
 
+
+@bp.route("/get_access_token", methods=["GET"])
+def get_access_token():
+    session_id = request.args.get("session_id")
+    if not session_id:
+        return jsonify({"error": "No session ID found."}), 401
+
+    token_info = retrieve_user_info_from_db(session_id)
+    if not token_info:
+        return jsonify({"error": "User not authorized."}), 401
+
+    return jsonify({"access_token": token_info["access_token"]})
