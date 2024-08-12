@@ -13,6 +13,8 @@ import ast
 import re
 import json
 from datetime import datetime
+import sys
+
 
 
 # Use the environment variable to set the React app URL
@@ -35,7 +37,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
         logging.FileHandler(os.path.join(log_directory, log_filename)),
-        logging.StreamHandler()  # If you also want to output to the console
+        logging.StreamHandler(sys.stdout)  # If you also want to output to the console
     ]
 )
 
@@ -151,41 +153,50 @@ def format_openai_response(response_string):
         raise ValueError("Could not parse the OpenAI response.")
     
 def openai_recommendation(user_text):
-    try: 
-        print("asking openAi to recommend some songs")
+    retries = 0
+    while retries <= MAX_RETRIES:
+        try: 
+            logger.info(f"Attempt {retries + 1}: Asking OpenAI to recommend some songs")
 
-        # Create the input message for OpenAI
-        input_message = f"Please recommend 3 songs based on the description: {user_text}. Provide the recommendation strictly in the format of a dictionary with keys 'Playlist name' and 'Songs'. The value for 'playlist name' should be a short name based on the user description prefixed with 'MM', and the 'songs' should be an array of 3 song titles and artists in the format ['Song1 by Artist1', 'Song2 by Artist2', 'Song3 by Artist3']. No formatting is needed, don't forget the closing bracket for the array."
+            # Create the input message for OpenAI
+            input_message = f"Please recommend 3 songs based on the description: {user_text}. Provide the recommendation strictly in the format of a dictionary with keys 'Playlist name' and 'Songs'. The value for 'playlist name' should be a short name based on the user description prefixed with 'MM', and the 'songs' should be an array of 3 song titles and artists in the format ['Song1 by Artist1', 'Song2 by Artist2', 'Song3 by Artist3']. No formatting is needed, don't forget the closing bracket for the array."
 
-        client = get_openai_client()
+            client = get_openai_client()
 
-        # Send request to OpenAI API
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a music recommendation assistant."},
-                {"role": "user", "content": input_message},
-            ],
-            max_tokens=50,
-        )
+            # Send request to OpenAI API
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a music recommendation assistant."},
+                    {"role": "user", "content": input_message},
+                ],
+                max_tokens=50,
+            )
 
-        # Extract song recommendation from response
-        song_recommendation = response.choices[0].message.content.strip()
+            # Extract song recommendation from response
+            song_recommendation = response.choices[0].message.content.strip()
 
-        # Format and parse the response
-        recommendation_dict = format_openai_response(song_recommendation)
+            # Format and parse the response
+            recommendation_dict = format_openai_response(song_recommendation)
 
-        print("OpenAI Response:", recommendation_dict)
+            print("OpenAI Response:", recommendation_dict)
 
-        return recommendation_dict
+            return recommendation_dict
 
-    except ValueError as e:
-        logger.error("ValueError: %s", str(e))
-        return jsonify({"error": "Unable to parse the recommendation. Please try again later."}), 500
+        except ValueError as e:
+            logger.warning(f"Attempt {retries + 1} failed: ValueError: %s", str(e))
+            retries += 1
+            if retries > MAX_RETRIES:
+                logger.error("Max retries reached. Unable to parse the recommendation.")
+                return jsonify({"error": "Unable to parse the recommendation after multiple attempts. Please try again later."}), 500
 
-    except Exception as e:
-        logger.error("Unexpected error: %s", str(e))
-        return jsonify({"error": "An unexpected error occurred. Please try again later."}), 500
+        except Exception as e:
+            logger.error(f"Attempt {retries + 1} failed: Unexpected error: %s", str(e))
+            return jsonify({"error": "An unexpected error occurred. Please try again later."}), 500
+
+    # This line should never be reached due to the return statements in the loop,
+    # but it's here for completeness
+    return jsonify({"error": "Unable to generate a recommendation. Please try again later."}), 500
 
 
 def get_spotify_user_id(access_token):
@@ -223,7 +234,6 @@ def spotify_playlist(recommendation_dict, session_id):
     # access_token = SPOTIFY_ACCESS_TOKEN
 
     token_info = retrieve_user_info_from_db(session_id)
-    print("Token Info from Spotify Playlist:", token_info)
     if not token_info:
         return redirect(url_for("login", session_id=session_id))
 
