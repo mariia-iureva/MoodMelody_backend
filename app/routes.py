@@ -361,13 +361,22 @@ def recommend():
 
 @bp.route("/auth/login", methods=["GET"])
 def login():
-    auth_url = (
-        "https://accounts.spotify.com/authorize"
-        "?response_type=code"
-        f"&client_id={SPOTIFY_CLIENT_ID}"
-        f"&redirect_uri={SPOTIFY_REDIRECT_URI}"
-        "&scope=playlist-modify-public playlist-modify-private"
-    )
+    scope = [
+        "playlist-modify-public",
+        "playlist-modify-private",
+        "user-read-private",
+        "user-read-email"
+    ]
+    
+    query_parameters = {
+        "response_type": "code",
+        "client_id": SPOTIFY_CLIENT_ID,
+        "scope": " ".join(scope),
+        "redirect_uri": SPOTIFY_REDIRECT_URI,
+        # "show_dialog": "true"  # Forces the user to approve the app again
+    }
+    
+    auth_url = "https://accounts.spotify.com/authorize?" + urlencode(query_parameters)
     return redirect(auth_url)
 
 
