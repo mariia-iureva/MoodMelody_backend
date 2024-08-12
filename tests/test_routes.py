@@ -1,7 +1,7 @@
 import json
 import pytest
 from app.routes import openai_recommendation
-from app.routes import store_tokens_in_db, spotify_playlist,format_openai_response
+from app.routes import store_tokens_in_db, spotify_playlist,format_openai_response, get_spotify_user_id
 
 # from app.routes import store_tokens_in_db, retrieve_user_info_from_db, spotify_playlist
 from app.models import User, SearchHistory
@@ -108,74 +108,149 @@ def test_spotify_playlist_creation_failed(client, mock_spotify, mock_spotify_use
         result = spotify_playlist(recommendation_dict, session_id)
         assert result == {"error": "Failed to create playlist."}
 
-# Test successful authentication
-def test_callback_success(client, mock_spotify_user_id):
-    # Mock the requests.post to simulate Spotify's token response
+def test_callback_success(client, mock_spotify_user_id, caplog):
     def mock_requests_post(url, headers, data):
         class MockResponse:
+            def __init__(self):
+                self.status_code = 200
             def json(self):
                 return {
                     "access_token": "mock_access_token",
                     "refresh_token": "mock_refresh_token",
                 }
-
+            @property
+            def text(self):
+                return "Mock response text"
         return MockResponse()
 
     with patch("requests.post", mock_requests_post):
         with patch("app.routes.get_session_id", return_value="new_session_id"):
-            # Patch get_spotify_user_id to return mock_spotify_user_id
             with patch("app.routes.get_spotify_user_id", return_value=mock_spotify_user_id):
-                # Setting the cookie in the client's cookie jar
                 client.set_cookie(key="session_id", value="mock_session_id")
-
+                
                 response = client.get("/auth/callback?code=mock_code")
-                assert response.status_code == 302
-                assert (
-                    response.location == "http://localhost:3000/home?session_id=mock_session_id"
-                )
-
-                # Verify that tokens and user_id are stored in the database
+                
+                # Print response data for debugging
+                print(f"Response Status Code: {response.status_code}")
+                print(f"Response Data: {response.get_data(as_text=True)}")
+                
+                # Print logs
+                print("Logs:")
+                for record in caplog.records:
+                    print(f"{record.levelname}: {record.getMessage()}")
+                
+                assert response.status_code == 302, f"Expected 302, got {response.status_code}"
+                assert response.location == "http://localhost:3000/home?session_id=mock_session_id"
+                
                 token_info = User.query.filter_by(session_id="mock_session_id").first()
                 assert token_info is not None
                 assert token_info.access_token == "mock_access_token"
                 assert token_info.refresh_token == "mock_refresh_token"
                 assert token_info.spotify_user_id == mock_spotify_user_id
 
-
-# Test callback with missing session ID
-def test_callback_no_session_id(client, mock_spotify_user_id):
-    # Mock the requests.post to simulate Spotify's token response
+def test_callback_no_session_id(client, mock_spotify_user_id, caplog):
     def mock_requests_post(url, headers, data):
         class MockResponse:
+            def __init__(self):
+                self.status_code = 200
             def json(self):
                 return {
                     "access_token": "mock_access_token",
                     "refresh_token": "mock_refresh_token",
                 }
-
+            @property
+            def text(self):
+                return "Mock response text"
         return MockResponse()
 
     with patch("requests.post", mock_requests_post):
         with patch("app.routes.get_spotify_user_id", return_value=mock_spotify_user_id):
-            # Ensure no cookie is set to simulate missing session ID
-            client.delete_cookie("session_id")
+            with patch("app.routes.get_session_id", return_value="new_session_id"):
+                client.delete_cookie("session_id")
+                
+                response = client.get("/auth/callback?code=mock_code")
+                
+                # Print response data for debugging
+                print(f"Response Status Code: {response.status_code}")
+                print(f"Response Data: {response.get_data(as_text=True)}")
+                
+                # Print logs
+                print("Logs:")
+                for record in caplog.records:
+                    print(f"{record.levelname}: {record.getMessage()}")
+                
+                assert response.status_code == 302, f"Expected 302, got {response.status_code}"
+                
+                # Extract the new session_id from the redirection URL
+                new_session_id = response.location.split("session_id=")[-1]
+                assert new_session_id != ""
+                assert response.location == f"http://localhost:3000/home?session_id={new_session_id}"
+                
+                # Verify that tokens and user_id are stored in the database
+                token_info = User.query.filter_by(session_id=new_session_id).first()
+                assert token_info is not None
+                assert token_info.access_token == "mock_access_token"
+                assert token_info.refresh_token == "mock_refresh_token"
+                assert token_info.spotify_user_id == mock_spotify_user_id
 
-            response = client.get("/auth/callback?code=mock_code")
-            assert response.status_code == 302
+def test_callback_spotify_error(client):
+    def mock_requests_post(url, headers, data):
+        class MockResponse:
+            def __init__(self):
+                self.status_code = 400
+                self.text = "Error from Spotify"
+        return MockResponse()
 
-            # Extract the new session_id from the redirection URL
-            new_session_id = response.location.split("session_id=")[-1]
-            assert new_session_id != ""
-            assert response.location == f"http://localhost:3000/home?session_id={new_session_id}"
+    with patch("requests.post", mock_requests_post):
+        response = client.get("/auth/callback?code=mock_code")
+        
+        assert response.status_code == 400
+        assert "Failed to obtain access token from Spotify" in response.get_json()["error"]
 
-            # Verify that tokens and user_id are stored in the database
-            token_info = User.query.filter_by(session_id=new_session_id).first()
-            assert token_info is not None
-            assert token_info.access_token == "mock_access_token"
-            assert token_info.refresh_token == "mock_refresh_token"
-            assert token_info.spotify_user_id == mock_spotify_user_id
+def test_callback_unexpected_error(client):
+    with patch("requests.post", side_effect=Exception("Unexpected error")):
+        response = client.get("/auth/callback?code=mock_code")
+        
+        assert response.status_code == 500
+        assert "An unexpected error occurred during authentication" in response.get_json()["error"]
 
+def test_get_spotify_user_id_success(mock_spotify_user_id):
+    def mock_requests_get(url, headers):
+        class MockResponse:
+            def __init__(self):
+                self.status_code = 200
+                self.text = '{"id": "' + mock_spotify_user_id + '"}'
+            def json(self):
+                return {"id": mock_spotify_user_id}
+        return MockResponse()
 
+    with patch("requests.get", mock_requests_get):
+        user_id = get_spotify_user_id("mock_access_token")
+        assert user_id == mock_spotify_user_id
+
+def test_get_spotify_user_id_error():
+    def mock_requests_get(url, headers):
+        class MockResponse:
+            def __init__(self):
+                self.status_code = 400
+                self.text = "Error from Spotify"
+        return MockResponse()
+
+    with patch("requests.get", mock_requests_get):
+        with pytest.raises(ValueError, match="Could not retrieve user profile from Spotify"):
+            get_spotify_user_id("mock_access_token")
+
+def test_get_spotify_user_id_error():
+    def mock_requests_get(url, headers):
+        class MockResponse:
+            def __init__(self):
+                self.status_code = 400
+                self.text = "Error from Spotify"
+        return MockResponse()
+
+    with patch("requests.get", mock_requests_get):
+        with pytest.raises(ValueError, match="Could not retrieve user profile from Spotify"):
+            get_spotify_user_id("mock_access_token")
 
 # Mock OpenAI Recommendation
 def mock_openai_recommendation(user_text):
