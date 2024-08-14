@@ -515,36 +515,40 @@ def callback():
 
 @bp.route("/history", methods=["GET"])
 def get_history():
-    session_id = request.args.get("session_id")
-    if not session_id:
-        session_id = request.cookies.get("session_id")
+    try:
+        session_id = request.args.get("session_id")
+        if not session_id:
+            session_id = request.cookies.get("session_id")
 
-    if not session_id:
-        return jsonify({"error": "No session ID found."}), 401
+        if not session_id:
+            return jsonify({"error": "No session ID found."}), 401
 
-    user_info = retrieve_user_info_from_db(session_id)
-    if not user_info:
-        return jsonify({"error": "User not authorized."}), 401
+        try:
+            user_info = retrieve_user_info_from_db(session_id)
+        except Exception as e:
+            logger.error(f"Error retrieving user info: {str(e)}")
+            return jsonify({"error": "An error occurred while retrieving user information."}), 500
 
-    user_id = user_info["spotify_user_id"]
-    history = (
-        SearchHistory.query.filter_by(spotify_user_id=user_id)
-        .order_by(SearchHistory.timestamp.desc())
-        .limit(10)  # Fetch the latest 10 records
-        .all()
-    )
+        if not user_info:
+            return jsonify({"error": "User not authorized."}), 401
 
-    return jsonify([{
-        "description": entry.search_query,
-        "spotifyLink": entry.spotify_link,
-        "timestamp": entry.timestamp.isoformat()
-    } for entry in history])
-    # return jsonify([{
-    #     "description": entry.search_query,
-    #     "spotifyLink": entry.spotify_link,
-    #     "timestamp": entry.timestamp.isoformat(),
-    #     "playlistId": entry.spotify_link.split('/')[-1]
-    # } for entry in history])
+        user_id = user_info["spotify_user_id"]
+        history = (
+            SearchHistory.query.filter_by(spotify_user_id=user_id)
+            .order_by(SearchHistory.timestamp.desc())
+            .limit(10)  # Fetch the latest 10 records
+            .all()
+        )
+
+        return jsonify([{
+            "description": entry.search_query,
+            "spotifyLink": entry.spotify_link,
+            "timestamp": entry.timestamp.isoformat()
+        } for entry in history])
+
+    except Exception as e:
+        logger.error(f"Error in get_history: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred."}), 500
 
 
 @bp.route("/playlist/<playlist_id>/tracks", methods=["GET"])

@@ -2,6 +2,9 @@ import json
 import pytest
 from app.routes import openai_recommendation
 from app.routes import store_tokens_in_db, spotify_playlist,format_openai_response, get_spotify_user_id
+from app.routes import get_session_id, save_search_history, refresh_spotify_token, retrieve_user_info_from_db
+from app.routes import openai_recommendation, MAX_RETRIES
+from app.routes import retrieve_user_info_from_db
 
 # from app.routes import store_tokens_in_db, retrieve_user_info_from_db, spotify_playlist
 from app.models import User, SearchHistory
@@ -10,6 +13,10 @@ from unittest.mock import patch, MagicMock
 from flask import jsonify
 import ast
 
+from flask import json
+from datetime import datetime, timedelta
+
+
 @pytest.fixture(autouse=True)
 def clear_db():
     yield
@@ -17,6 +24,11 @@ def clear_db():
     db.session.query(User).delete()
     db.session.commit()
 
+def test_welcome_route(client):
+    """Test the welcome route."""
+    response = client.get('/')
+    assert response.status_code == 200
+    assert response.data.decode('utf-8') == "Welcome to the Mood Melody Backend!"
 
 def test_check_openai_route(client, mock_openai):
     response = client.post(
@@ -406,3 +418,179 @@ def test_format_openai_response_dict():
         ],
     }
     assert result == expected
+
+def test_get_session_id():
+    session_id = get_session_id()
+    assert isinstance(session_id, str)
+    assert len(session_id) == 36  # UUID4 should be 36 characters long
+
+def test_save_search_history(client, clear_db):
+    # The client fixture provides the app context
+    spotify_user_id = "test_user"
+    search_query = "happy summer vibes"
+    spotify_link = "https://open.spotify.com/playlist/123456"
+    
+    save_search_history(spotify_user_id, search_query, spotify_link)
+    
+    # Verify the entry was saved
+    entry = SearchHistory.query.filter_by(spotify_user_id=spotify_user_id).first()
+    assert entry is not None
+    assert entry.search_query == search_query
+    assert entry.spotify_link == spotify_link
+
+@patch('requests.post')
+def test_refresh_spotify_token_success(mock_post):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"access_token": "new_access_token"}
+    mock_post.return_value = mock_response
+
+    new_token = refresh_spotify_token("old_refresh_token")
+    assert new_token == "new_access_token"
+
+@patch('requests.post')
+def test_refresh_spotify_token_failure(mock_post):
+    mock_response = MagicMock()
+    mock_response.status_code = 400
+    mock_response.text = "Error refreshing token"
+    mock_post.return_value = mock_response
+
+    with pytest.raises(ValueError, match="Failed to refresh access token from Spotify."):
+        refresh_spotify_token("old_refresh_token")
+
+def test_store_tokens_in_db(client, clear_db):
+    session_id = "test_session"
+    token_info = {
+        "access_token": "test_access_token",
+        "refresh_token": "test_refresh_token"
+    }
+    spotify_user_id = "test_user_id"
+    
+    store_tokens_in_db(session_id, token_info, spotify_user_id)
+    
+    # Verify the tokens were stored
+    user = User.query.filter_by(session_id=session_id).first()
+    assert user is not None
+    assert user.access_token == "test_access_token"
+    assert user.refresh_token == "test_refresh_token"
+    assert user.spotify_user_id == "test_user_id"
+
+def test_retrieve_user_info_from_db(client, clear_db):
+    # First, store some test data
+    session_id = "test_session"
+    user = User(session_id=session_id, access_token="test_access", refresh_token="test_refresh", spotify_user_id="test_user")
+    db.session.add(user)
+    db.session.commit()
+    
+    # Now retrieve and check
+    user_info = retrieve_user_info_from_db(session_id)
+    assert user_info is not None
+    assert user_info["access_token"] == "test_access"
+    assert user_info["refresh_token"] == "test_refresh"
+    assert user_info["spotify_user_id"] == "test_user"
+    
+    # Test with non-existent session
+    assert retrieve_user_info_from_db("non_existent_session") is None
+
+@patch('app.routes.requests.get')
+def test_get_playlist_tracks(mock_get, client):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "items": [
+            {
+                "track": {
+                    "id": "track1",
+                    "name": "Song 1",
+                    "artists": [{"name": "Artist 1"}],
+                    "album": {"name": "Album 1"},
+                    "duration_ms": 200000,
+                    "preview_url": "http://example.com/preview1"
+                }
+            }
+        ]
+    }
+    mock_get.return_value = mock_response
+
+    # Mock the retrieve_user_info_from_db function
+    with patch('app.routes.retrieve_user_info_from_db', return_value={"access_token": "test_token"}):
+        response = client.get('/playlist/test_playlist_id/tracks?session_id=test_session')
+        
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "items" in data
+    assert len(data["items"]) == 1
+    assert data["items"][0]["name"] == "Song 1"
+    assert data["items"][0]["artist"] == "Artist 1"
+
+@patch('app.routes.retrieve_user_info_from_db')
+def test_get_access_token(mock_retrieve, client):
+    mock_retrieve.return_value = {"access_token": "test_access_token"}
+    
+    response = client.get('/get_access_token?session_id=test_session')
+        
+    assert response.status_code == 200
+    assert response.get_json() == {"access_token": "test_access_token"}
+
+@patch('app.routes.retrieve_user_info_from_db')
+def test_get_access_token_no_session(mock_retrieve, client):
+    mock_retrieve.return_value = None
+    
+    response = client.get('/get_access_token')
+        
+    assert response.status_code == 401
+    assert "No session ID found" in response.get_json()["error"]
+
+def test_get_history_success(client, clear_db):
+    # Setup: Create a user and some search history
+    user = User(session_id="test_session", spotify_user_id="test_user", access_token="test_token", refresh_token="test_refresh")
+    db.session.add(user)
+    
+    # Add some search history entries
+    for i in range(15):  # Add 15 entries to test the limit of 10
+        history = SearchHistory(
+            spotify_user_id="test_user",
+            search_query=f"Test query {i}",
+            spotify_link=f"https://open.spotify.com/playlist/test{i}"
+        )
+        db.session.add(history)
+        # Simulate time passing between entries
+        db.session.flush()
+        history.timestamp = datetime.now() - timedelta(minutes=i)
+    
+    db.session.commit()
+
+    # Test the route
+    response = client.get('/history?session_id=test_session')
+    assert response.status_code == 200
+    
+    data = json.loads(response.data)
+    assert len(data) == 10  # Should only return the latest 10 entries
+    assert data[0]['description'] == "Test query 0"  # Most recent entry
+    assert "spotifyLink" in data[0]
+    assert "timestamp" in data[0]
+
+def test_get_history_invalid_session_id(client):
+    response = client.get('/history?session_id=invalid_session')
+    assert response.status_code == 401
+    assert json.loads(response.data)['error'] == "User not authorized."
+
+def test_get_history_empty(client, clear_db):
+    # Setup: Create a user but no search history
+    user = User(session_id="test_session", spotify_user_id="test_user", access_token="test_token", refresh_token="test_refresh")
+    db.session.add(user)
+    db.session.commit()
+
+    response = client.get('/history?session_id=test_session')
+    assert response.status_code == 200
+    assert json.loads(response.data) == []
+
+from unittest.mock import patch
+
+@patch('app.routes.retrieve_user_info_from_db')
+def test_get_history_db_error(mock_retrieve, client):
+    mock_retrieve.side_effect = Exception("Database error")
+    
+    response = client.get('/history?session_id=test_session')
+    assert response.status_code == 500
+    assert "error" in json.loads(response.data)
