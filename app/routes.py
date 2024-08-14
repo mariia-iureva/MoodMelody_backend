@@ -160,12 +160,7 @@ def openai_recommendation(user_text):
             logger.info(f"Attempt {retries + 1}: Asking OpenAI to recommend some songs")
 
             # Create the input message for OpenAI
-            input_message = f"""Please generate a playlist recommendation. 
-            First, provide a JSON object with two fields: 'Playlist name' and 'Songs'. 
-            'Playlist name' should be a short title that captures the mood, prefixed with 'MM'. 
-            'Songs' should be an array containing exactly 3 songs, each formatted as 'Song Title by Artist'. 
-            Ensure the JSON object is complete and correctly formatted with all necessary brackets and braces. 
-            Here's the mood description: '{user_text}'."""
+            input_message = f"Please recommend 3 songs based on the description: {user_text}. Provide the recommendation strictly in the format of a dictionary with keys 'Playlist name' and 'Songs'. The value for 'playlist name' should be a short name based on the user description prefixed with 'MM', and the 'songs' should be an array of 3 song titles and artists in the format ['Song1 by Artist1', 'Song2 by Artist2', 'Song3 by Artist3']. No formatting is needed, don't forget the closing bracket for the array."
 
             client = get_openai_client()
 
