@@ -160,7 +160,12 @@ def openai_recommendation(user_text):
             logger.info(f"Attempt {retries + 1}: Asking OpenAI to recommend some songs")
 
             # Create the input message for OpenAI
-            input_message = f"Please recommend 3 songs based on the description: {user_text}. Provide the recommendation strictly in the format of a dictionary with keys 'Playlist name' and 'Songs'. The value for 'playlist name' should be a short name based on the user description prefixed with 'MM', and the 'songs' should be an array of 3 song titles and artists in the format ['Song1 by Artist1', 'Song2 by Artist2', 'Song3 by Artist3']. No formatting is needed, don't forget the closing bracket for the array."
+            input_message = f"""Please generate a playlist recommendation. 
+            First, provide a JSON object with two fields: 'Playlist name' and 'Songs'. 
+            'Playlist name' should be a short title that captures the mood, prefixed with 'MM'. 
+            'Songs' should be an array containing exactly 3 songs, each formatted as 'Song Title by Artist'. 
+            Ensure the JSON object is complete and correctly formatted with all necessary brackets and braces. 
+            Here's the mood description: '{user_text}'."""
 
             client = get_openai_client()
 
@@ -515,36 +520,40 @@ def callback():
 
 @bp.route("/history", methods=["GET"])
 def get_history():
-    session_id = request.args.get("session_id")
-    if not session_id:
-        session_id = request.cookies.get("session_id")
+    try:
+        session_id = request.args.get("session_id")
+        if not session_id:
+            session_id = request.cookies.get("session_id")
 
-    if not session_id:
-        return jsonify({"error": "No session ID found."}), 401
+        if not session_id:
+            return jsonify({"error": "No session ID found."}), 401
 
-    user_info = retrieve_user_info_from_db(session_id)
-    if not user_info:
-        return jsonify({"error": "User not authorized."}), 401
+        try:
+            user_info = retrieve_user_info_from_db(session_id)
+        except Exception as e:
+            logger.error(f"Error retrieving user info: {str(e)}")
+            return jsonify({"error": "An error occurred while retrieving user information."}), 500
 
-    user_id = user_info["spotify_user_id"]
-    history = (
-        SearchHistory.query.filter_by(spotify_user_id=user_id)
-        .order_by(SearchHistory.timestamp.desc())
-        .limit(10)  # Fetch the latest 10 records
-        .all()
-    )
+        if not user_info:
+            return jsonify({"error": "User not authorized."}), 401
 
-    return jsonify([{
-        "description": entry.search_query,
-        "spotifyLink": entry.spotify_link,
-        "timestamp": entry.timestamp.isoformat()
-    } for entry in history])
-    # return jsonify([{
-    #     "description": entry.search_query,
-    #     "spotifyLink": entry.spotify_link,
-    #     "timestamp": entry.timestamp.isoformat(),
-    #     "playlistId": entry.spotify_link.split('/')[-1]
-    # } for entry in history])
+        user_id = user_info["spotify_user_id"]
+        history = (
+            SearchHistory.query.filter_by(spotify_user_id=user_id)
+            .order_by(SearchHistory.timestamp.desc())
+            .limit(10)  # Fetch the latest 10 records
+            .all()
+        )
+
+        return jsonify([{
+            "description": entry.search_query,
+            "spotifyLink": entry.spotify_link,
+            "timestamp": entry.timestamp.isoformat()
+        } for entry in history])
+
+    except Exception as e:
+        logger.error(f"Error in get_history: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred."}), 500
 
 
 @bp.route("/playlist/<playlist_id>/tracks", methods=["GET"])
