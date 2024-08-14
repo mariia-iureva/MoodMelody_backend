@@ -206,9 +206,16 @@ def get_spotify_user_id(access_token):
         headers = {"Authorization": f"Bearer {access_token}"}
         response = requests.get(user_profile_url, headers=headers)
         
-        # Log and print the response status code and text for debugging
         logger.info("User profile request response status: %s", response.status_code)
         logger.info("User profile request response text: %s", response.text)
+
+        if response.status_code == 401:
+            logger.warning("Access token expired, attempting to refresh...")
+            raise ValueError("Access token expired")
+
+        if response.status_code == 403:
+            logger.error("User may need to be whitelisted")
+            raise ValueError("User may need to be whitelisted in the Spotify API")
 
         if response.status_code != 200:
             logger.error("Failed to fetch user profile: %s", response.text)
@@ -228,6 +235,36 @@ def get_spotify_user_id(access_token):
     except json.JSONDecodeError as e:
         logger.error("JSONDecodeError in get_spotify_user_id: %s", str(e))
         raise ValueError("Invalid JSON received from Spotify.")
+
+# The refresh_spotify_token function remains unchanged
+def refresh_spotify_token(refresh_token):
+    try:
+        token_url = "https://accounts.spotify.com/api/token"
+        auth_str = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
+        b64_auth_str = base64.urlsafe_b64encode(auth_str.encode()).decode()
+
+        headers = {
+            "Authorization": f"Basic {b64_auth_str}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        }
+
+        response = requests.post(token_url, headers=headers, data=data)
+        
+        if response.status_code != 200:
+            logger.error("Failed to refresh token: %s", response.text)
+            raise ValueError("Failed to refresh access token from Spotify.")
+
+        new_token_info = response.json()
+        return new_token_info["access_token"]
+
+    except Exception as e:
+        logger.error("Error refreshing Spotify token: %s", str(e))
+        raise
 
 
 def spotify_playlist(recommendation_dict, session_id):
@@ -402,11 +439,9 @@ def callback():
 
         response = requests.post(token_url, headers=headers, data=data)
         
-        # Log and print the response status code and text for debugging
         logger.info("Token request response status: %s", response.status_code)
         logger.info("Token request response text: %s", response.text)
 
-        # Check for a successful response
         if response.status_code != 200:
             logger.error("Failed to get token: %s", response.text)
             return jsonify({"error": "Failed to obtain access token from Spotify."}), 400
@@ -425,11 +460,29 @@ def callback():
         }
 
         # Get the Spotify user ID
-        spotify_user_id = get_spotify_user_id(token_info["access_token"])
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                spotify_user_id = get_spotify_user_id(token_info["access_token"])
+                break
+            except ValueError as e:
+                if str(e) == "Access token expired" and attempt < max_retries - 1:
+                    # Try refreshing the token
+                    new_access_token = refresh_spotify_token(token_info["refresh_token"])
+                    token_info["access_token"] = new_access_token
+                else:
+                    raise
+        else:
+            # If we've exhausted all retries and still can't get the user ID
+            logger.error("Failed to authorize user after multiple attempts")
+            return jsonify({
+                "error": "User authorization failed. You may need to be whitelisted in the Spotify API. Please contact the developer for assistance.",
+                "contact": "developer@example.com"  # Replace with actual contact info
+            }), 403
+
         store_tokens_in_db(session_id, token_info, spotify_user_id)
 
-        # Redirect back to React app with session ID in URL
-        logger.info("Access Token: %s", response_data["access_token"])
+        logger.info("Access Token: %s", token_info["access_token"])
         logger.info("Authorization successful! You can now use Spotify API.")
 
         react_app_url = f"{REACT_APP_URL}/home?session_id={session_id}"
@@ -446,6 +499,15 @@ def callback():
     except json.JSONDecodeError as e:
         logger.error("JSONDecodeError: Failed to parse JSON. Details: %s", str(e))
         return jsonify({"error": "Received invalid JSON response from Spotify."}), 500
+
+    except ValueError as e:
+        logger.error("ValueError: %s", str(e))
+        if "whitelist" in str(e).lower():
+            return jsonify({
+                "error": "User authorization failed. You may need to be whitelisted in the Spotify API. Please contact the developer for assistance.",
+                "contact": "Masha C21"  # Replace with actual contact info
+            }), 403
+        return jsonify({"error": str(e)}), 400
 
     except Exception as e:
         logger.error("Unexpected error: %s", str(e))
