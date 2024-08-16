@@ -6,7 +6,7 @@ class SearchHistory(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     spotify_user_id = db.Column(db.String(255))
-    search_query = db.Column(db.String(255))
+    search_query = db.Column(db.String(1000))
     timestamp = db.Column(db.DateTime, default=datetime.now)
     spotify_link = db.Column(db.String(255))
 
